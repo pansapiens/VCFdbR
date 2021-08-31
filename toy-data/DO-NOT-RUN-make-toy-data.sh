@@ -1,34 +1,46 @@
-#! /bin/bash
+#!/bin/bash
+set -e
+set -o pipefail
+set -o xtrace
 
 ## This script is not intended to be run, it is primarily for reference of how the toy data was prepared ##
 ## This is a path on my local machine, you would need your own VEP installation to run this ##
 VEP_DIR="/wdata/bcbio-dna/genomes/Hsapiens/hg19/vep"
 
-THREADS=6
+THREADS=4
      
 #### Download Chromosome 22  ####
-VCF="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
-VCF_IDX="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz.tbi"
+#VCF="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
+#VCF_IDX="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz.tbi"
+VCF="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz"
+VCF_IDX="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz.tbi"
 REF="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/phase2_reference_assembly_sequence/hs37d5.fa.gz"
 REF_IDX="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/phase2_reference_assembly_sequence/hs37d5.fa.gz.fai"
 
-wget $VCF $VCF_IDX $REF $REF_IDX
+wget -c $VCF $VCF_IDX $REF $REF_IDX
 
 #### Set up file names ####
 NORM_VCF=$(basename -s .vcf.gz $VCF).norm.vcf.gz
 VEP_VCF=$(basename -s .vcf.gz $NORM_VCF).vep.vcf.gz
 
 #### Normalize ####
-bcftools norm -c ws -f $(basename $REF) -m - $(basename $VCF)  \
-  | sed -e 's/Number=A/Number=1/g' \
-  | head -n 1255 \
-  | bgzip -c >  $NORM_VCF 
-  
-tabix $NORM_VCF 
+if [[ ! -f $NORM_VCF ]]; then
+	bcftools norm -c ws -f $(basename $REF) -m - $(basename $VCF)  \
+	  | sed -e 's/Number=A/Number=1/g' \
+	  | head -n 1255 \
+	  | bgzip -c >  $NORM_VCF
+fi
+
+if [[ -f $NORM_VCF ]]; then
+	tabix $NORM_VCF
+else
+	echo "No $NORM_VCF !!"
+	exit 1
+fi
 
 #### Annotate with VEP ####
 unset PERL5LIB && \
-    vep --vcf \
+   vep --vcf \
     -o stdout \
     -i $(basename $NORM_VCF) \
     --fork $THREADS \
@@ -68,13 +80,13 @@ unset PERL5LIB && \
     
 tabix $VEP_VCF
 
-mkdir anno-vcf
+mkdir -p anno-vcf
 mv $(basename $VEP_VCF)* anno-vcf/
 
-mkdir norm-vcf
+mkdir -p norm-vcf
 mv $(basename $NORM_VCF)* norm-vcf/
 
-mkdir raw-vcf
+mkdir -p raw-vcf
 mv $(basename $VCF)* raw-vcf/
 mv $(basename $REF)* raw-vcf/
 

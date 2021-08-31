@@ -9,6 +9,10 @@ multi_gt <- FALSE
 end_provided <- FALSE
 debug_mode <- FALSE
 
+db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
+db_uri <- urltools::url_parse(db_url)
+db_type <- db_uri$scheme
+prefix <- db_uri$path
 
 while(length(args > 0) ){
   if(args[1] == "--help" | args[1] == "-h" ){
@@ -40,6 +44,14 @@ Required Arguments:
     on the size of individual files. 
 
 Optional Arguments: 
+--db-url [string]
+    A URL to the database to connect to, eg
+    postgres://myuser:mypass@localhost:5432/testdb
+    Overrides the value from the environment variable
+    VCFDBR_DATABASE_URL - for security it is recommended
+    this option is only used for testing. Instead use
+    VCFDBR_DATABASE_URL set in .Renviron in your
+    home directory.
 --chunk-size [integer]
     The approximate number of variants to process
     at once. Smaller numbers  use less memory at
@@ -95,7 +107,16 @@ Optional Arguments:
     args <- args[-1:-2]
     message("Writing genotypes in parallel (requires furrr package)")
     require(furrr)
-  }
+  } else if(args[1] == "--db-url"){
+    db_url <- args[2]
+    db_uri <- urltools::url_parse(db_url)
+    db_type <- db_uri$scheme
+    prefix <- db_uri$path
+    args <- args[-1:-2]
+  } 
+  # else if(args[1] == "--db-type"){
+  #
+  # }
   else {
     stop("Unknown argument: ", args[1])
   }

@@ -1,6 +1,11 @@
 #! Rscript
 args = commandArgs(trailingOnly=TRUE)
 
+db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
+db_uri <- urltools::url_parse(db_url)
+db_type <- db_uri$scheme
+prefix <- db_uri$path
+
 ## defaults ##
 if(!exists("multi_gt")){
   run_parallel <- FALSE
@@ -49,7 +54,14 @@ while(length(args > 0) ){
     threads <- args[2]
     args <- args[-1:-2]
     message("Writing genotypes in parallel (requires furrr package)")
-  } else {
+  } else if(args[1] == "--db-url"){
+    db_url <- args[2]
+    db_uri <- urltools::url_parse(db_url)
+    db_type <- db_uri$scheme
+    prefix <- db_uri$path
+    args <- args[-1:-2]
+  }  
+  else {
     stop("Unknown argument: ", args[1])
   }
 }
@@ -86,13 +98,20 @@ suppressPackageStartupMessages(require(dbplyr))
 suppressPackageStartupMessages(require(magrittr))
 suppressPackageStartupMessages(require(progress))
 suppressPackageStartupMessages(require(RSQLite))
+suppressPackageStartupMessages(require(RPostgres))
+
+source(paste0(dirname(this_file()), "/util.R"))
 
 
 if(!exists('chunk_ranges')){
   chunk_ranges <- read_rds(ranges_name)
 }
 
-db_name <- paste0(prefix, ".db")
+if (db_type == "sqlite") {
+  db_name <- paste0(prefix, ".db")
+} else {
+  db_name <- prefix
+}
 
 #### If a progress file is detected, resume from it ####
 if(!file.exists(paste0(prefix, ".progress.RData"))){
@@ -117,7 +136,7 @@ if(!file.exists(paste0(prefix, ".progress.RData"))){
   
   lapply(names(header), function(name){
     X <- header[[name]]
-    con <- dbConnect(SQLite(), db_name)
+    con <- getConnection(db_type, paste0(db_name), username=username, password=password)
     DBI::dbWriteTable(
       conn = con,
       name = name,
@@ -127,7 +146,7 @@ if(!file.exists(paste0(prefix, ".progress.RData"))){
   })
   
   ## add samples ##
-  con <- dbConnect(SQLite(), db_name)
+  con <- getConnection(db_type, paste0(db_name), username=username, password=password)
   DBI::dbWriteTable(
     conn = con,
     name = 'samples',
@@ -463,7 +482,7 @@ for(i in seq(chunk_start,p)){
       geno.vcf <- geno.vcf %>%
         select(-group) %>%
         arrange(variant_id, sample)
-      con <- dbConnect(SQLite(), db_name)
+      con <- getConnection(db_type, paste0(db_name), username=username, password=password)
       DBI::dbWriteTable(
         conn = con, 
         name = "variant_geno", 
@@ -481,7 +500,7 @@ for(i in seq(chunk_start,p)){
   }
   
   ## Write to database
-  con <- dbConnect(SQLite(), db_name)
+  con <- getConnection(db_type, paste0(db_name), username=username, password=password)
   if(exists('csq.vcf')){
     DBI::dbWriteTable(
       conn = con, 

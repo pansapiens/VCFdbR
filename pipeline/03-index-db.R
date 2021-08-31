@@ -1,6 +1,11 @@
 #! Rscript
 args = commandArgs(trailingOnly=TRUE)
 
+db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
+db_uri <- urltools::url_parse(db_url)
+db_type <- db_uri$scheme
+prefix <- db_uri$path
+
 while(length(args > 0) ){
   if(args[1] == '--prefix'){
     prefix <- args[2]
@@ -10,7 +15,14 @@ while(length(args > 0) ){
     db_name <- args[2]
     args <- args[-1:-2]
     message("Input DB: ", db_name)
-  } else {
+  } else if(args[1] == "--db-url"){
+    db_url <- args[2]
+    db_uri <- urltools::url_parse(db_url)
+    db_type <- db_uri$scheme
+    prefix <- db_uri$path
+    args <- args[-1:-2]
+  }
+  else {
     stop("Unknown argument: ", args[1])
   }
 }
@@ -28,41 +40,43 @@ suppressPackageStartupMessages(require(tidyverse))
 suppressPackageStartupMessages(require(magrittr))
 suppressPackageStartupMessages(require(DBI))
 suppressPackageStartupMessages(require(RSQLite))
+suppressPackageStartupMessages(require(RPostgres))
 
+source(paste0(dirname(this_file()), "/util.R"))
 
 ## build indicies
 message("######\nBUILDING INDICIES\n######")
-con <- dbConnect(SQLite(), paste0(db_name))
+con <- getConnection(db_type, paste0(db_name), username=username, password=password)
 
-dbExecute(con, "CREATE INDEX idx_info_variant_id ON variant_info (variant_id)")
+dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_info_variant_id ON variant_info (variant_id)")
 message("### done with variant ids on variant_info")
 
 if ('variant_geno' %in% DBI::dbListTables(con)){
-  dbExecute(con, "CREATE INDEX idx_geno_variant_id ON variant_geno (variant_id)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_geno_variant_id ON variant_geno (variant_id)")
   message("### done with variant ids on variant_geno")
 }
 
 if ('variant_impact' %in% DBI::dbListTables(con)){
-  dbExecute(con, "CREATE INDEX idx_impact_variant_id ON variant_impact (variant_id)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_variant_id ON variant_impact (variant_id)")
   message("### done with variant ids on variant impacts")
-  dbExecute(con, "CREATE INDEX idx_impact_symbol ON variant_impact (symbol)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_symbol ON variant_impact (symbol)")
   message("### done with gene symbols")
-  dbExecute(con, "CREATE INDEX idx_impact_gene on variant_impact (gene)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_gene on variant_impact (gene)")
   message("### done with gene IDs")
   
   message("## Indexing Variant Effects ##")
-  dbExecute(con, "CREATE INDEX idx_impact_consequence ON variant_impact (consequence)")
-  dbExecute(con, "CREATE INDEX idx_impact_lof ON variant_impact (is_lof)")
-  dbExecute(con, "CREATE INDEX idx_impact_exonic ON variant_impact (is_exonic)")
-  dbExecute(con, "CREATE INDEX idx_impact_splicing ON variant_impact (is_splicing)")
-  dbExecute(con, "CREATE INDEX idx_impact_biotype ON variant_impact (biotype)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_consequence ON variant_impact (consequence)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_lof ON variant_impact (is_lof)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_exonic ON variant_impact (is_exonic)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_splicing ON variant_impact (is_splicing)")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_impact_biotype ON variant_impact (biotype)")
 }
 
 
 message("## Indexing Allele Frequencies ##")
-if('af' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX idx_info_aaf ON variant_info (af)")}
-if('an' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX idx_info_an ON variant_info (an)")}
-if('ac' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX idx_info_ac ON variant_info (ac)")}
+if('af' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_info_aaf ON variant_info (af)")}
+if('an' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_info_an ON variant_info (an)")}
+if('ac' %in% DBI::dbListFields(con, "variant_info")){dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_info_ac ON variant_info (ac)")}
 
 dbDisconnect(con)
 message("######\nDONE INDEXING\n######")
@@ -71,7 +85,7 @@ date()
 
 #### Make Variant Ranges ###
 message("######\nMAKING VARIANT RANGES OBJECT\n######")
-con <- dbConnect(SQLite(), db_name)
+con <- getConnection(db_type, paste0(db_name), username=username, password=password)
 var_info <- tbl(con, 'variant_info')
 #var_info <- info.vcf
 var_ranges <- tbl(con, 'variant_info') %>%

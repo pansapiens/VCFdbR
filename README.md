@@ -1,7 +1,7 @@
 # VCFdbR
 
 
-This processing pipeline converts a VCF into an SQLite representation, using R. This readme only covers the practical matters of executing the pipeline. Please [see the wiki](https://github.com/tkoomar/VCFdbR/wiki)  or [FAQ](https://github.com/tkoomar/VCFdbR/wiki/FAQ) for more detailed discussions and tutorials covering how to use a VCFdb once it is created. 
+This processing pipeline converts a VCF into an SQLite (or PostgreSQL) representation, using R. This readme only covers the practical matters of executing the pipeline. Please [see the wiki](https://github.com/tkoomar/VCFdbR/wiki)  or [FAQ](https://github.com/tkoomar/VCFdbR/wiki/FAQ) for more detailed discussions and tutorials covering how to use a VCFdb once it is created. 
 
 [How do I convert a VCF to a VCFdb?](#how-do-i-convert-a-vcf-to-a-vcfdb)
 
@@ -13,7 +13,7 @@ This processing pipeline converts a VCF into an SQLite representation, using R. 
 
 VCFdbR was designed with Linux-based high performance computing clusters in mind, but it should work on any distro. It has not been tested on Windows or Mac operating systems, and changes to specifically support them are not planned. 
 
-The main benefit of a SQLite database in this context is quick searching of huge datasets with minimal RAM overhead. This entire concept is based on the adage that _"storage is cheaper than time"_. No matter the options you choose, plan for the resulting database to take up at least 10 times as much disk space as the gzipped VCF used to create the database in the first place. 
+The main benefit of an SQL database in this context is quick searching of huge datasets with minimal RAM overhead. This entire concept is based on the adage that _"storage is cheaper than time"_. No matter the options you choose, plan for the resulting database to take up at least 10 times as much disk space as the gzipped VCF used to create the database in the first place. 
 
 ## How do I convert a VCF to a VCFdb?
 
@@ -31,9 +31,11 @@ $ Rscript VCFdb.R --prefix [character] --vcf [character] --mode ['file'|'table']
       * *Unless you are dealing with thousands of whole-genomes or tens of thousands of exomes, `'table'` is likely the optimal mode.*
     * `'file'` mode produces a "File-GT" database where the genotypes are stored as individual files in a directory. The SQLite database will only contain the various variant annotations present in the VCF. 
         * This is ideal when working with very large cohorts that may result in final databases that are so large as to violate filesystem or SQLite database size limits for individual files. However, the resulting database is significnatly less portable and care should be taken when choosing where to store the database. 
-        * If your hard disk is fast, this has the added benefit of allowing genotypes to be written in parallel, via the `--threads` argument
+        * If your hard disk is fast, this has the added benefit of allowing genotypes to be written in parallel, via the 
+`--threads` argument
         * This mode puts a column in the database pointing to the locaiton of the genotype files on the filesystem, this is why _**it is not reccomended to move the File-GT genotype folder after creation.**_ Consider where you build the database carefully. 
             * It is possible, but will require manually altering the paths in the `geno` column of the `variant_impact` table. Plus, moving the thousands or millions of individual genotype files will be exceptionally slow. 
+* Alternatively, a [dbx](https://cran.r-project.org/web/packages/dbx/index.html) compatible database URL can be specified by setting the `VCFDBR_DATABASE_URL` environment variable like `VCFDBR_DATABASE_URL=postgres://myuser:mypass@localhost:5432/testdb`. It is recommended that this is set in `~/.Renviron` or similar, so that you aren't typing a plaintext password on the commandline (which can appear in the system `ps` list or your shell history). For testing, the database URL can be passed via the `--db-url` command line option. The database name from the URL overrides `--prefix`.
 * It is common for VCFs to have complex FORMAT fields which contain multiple values. The VariantAnnotation package in R does not handle these particularly efficiently, so the default behavior of VCFdbR is to ignore such fields. See the bottom of this readme for more information on this topic. 
 
 ## What do I need to run VCFdbR?
@@ -42,7 +44,9 @@ First, you need to [clone this repository](https://help.github.com/en/github/cre
 
 Several R packages are required to be available. If you want to ensure you have all of the require packages, and that they are up to date, run the following code (in R) install these packages:
 ```{r}
-> install.packages('tidyverse', 'dbplyr', 'magrittr', 'progress', 'DBI', 'RSQLite')
+> install.packages(c('tidyverse', 'dbplyr', 'magrittr', 'progress', 'DBI', 'RSQLite'))
+> install.packages(c('RPostgres', 'dbx', 'urltools'))
+> install.packages('furrr')
 > if (!requireNamespace("BiocManager", quietly = TRUE)) {install.packages("BiocManager")}
 > BiocManager::install("VariantAnnotation")
 ```
@@ -67,7 +71,7 @@ $ tabix [OUTPUT VCF]
 
 ## So what exactly does VCFdbR do?
 
-VCFdbR takes data in the difficult-to-parse and search [Variant Call File](https://samtools.github.io/hts-specs/VCFv4.2.pdf) format and converts it to a SQLite database that can be indexed, allowing for rapid searching. This makes exploratory analyis significantly faster and removes the need to read the entire VCF into memory at once. This design was inspired by the fantastic [GEMINI](https://gemini.readthedocs.io/en/latest/), but has some critical changes to allow for processing very large cohorts and remvoes a lot of overhead by not providing its own bespoke interface to the database. 
+VCFdbR takes data in the difficult-to-parse and search [Variant Call File](https://samtools.github.io/hts-specs/VCFv4.2.pdf) format and converts it to a SQLite or Postgres database that can be indexed, allowing for rapid searching. This makes exploratory analyis significantly faster and removes the need to read the entire VCF into memory at once. This design was inspired by the fantastic [GEMINI](https://gemini.readthedocs.io/en/latest/), but has some critical changes to allow for processing very large cohorts and remvoes a lot of overhead by not providing its own bespoke interface to the database. 
 
 For example, a variant specified like this in a VCF:
 ```{text}

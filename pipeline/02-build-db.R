@@ -1,4 +1,9 @@
 #! Rscript
+
+suppressPackageStartupMessages(require(stringr))
+
+source(paste0(dirname(this_file()), "/util.R"))
+
 args = commandArgs(trailingOnly=TRUE)
 
 db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
@@ -45,6 +50,10 @@ while(length(args > 0) ){
     multi_gt <- TRUE
     args <- args[-1]
     message("Including GENO Fields with multiple values (may be slow for many samples)")
+  } else if(args[1] == "--info-prefixes"){
+    vcfanno_prefixes <- str_split(args[2], ',', simplify=TRUE)
+    args <- args[-1]
+    message(paste(c("Will generate additional variant_info_* tables for INFO fields starting with:", paste0(vcfanno_prefixes, sep=','))))
   } else if(args[1] == "--debug"){
     debug_mode <- TRUE
     args <- args[-1]
@@ -81,6 +90,19 @@ if(exists('threads') ){
   }
 }
 
+# If a column name starts with a number (eg 1KG) we need to prefix it with X
+if(exists('vcfanno_prefixes')) {
+  vcfanno_prefixes <- lapply(vcfanno_prefixes, function(k) {
+    if (str_detect(k, regex('^[0-9]'))) {
+      return(paste0('x', k))
+    }
+    return(k)
+  })
+  vcfanno_prefixes <- unlist(vcfanno_prefixes)
+} else {
+  vcfanno_prefixes <- c()
+}
+
 if(!exists('file_mode')){
   stop("You must specify a `--mode` for how genotypes should be stored: either 'file' or 'table'")
 } else if(file_mode){
@@ -100,8 +122,9 @@ suppressPackageStartupMessages(require(progress))
 suppressPackageStartupMessages(require(RSQLite))
 suppressPackageStartupMessages(require(RPostgres))
 
-source(paste0(dirname(this_file()), "/util.R"))
-
+if (debug_mode) {
+  message(paste0("vcfanno_prefixes = ", deparse(vcfanno_prefixes)))
+}
 
 if(!exists('chunk_ranges')){
   chunk_ranges <- read_rds(ranges_name)
@@ -137,6 +160,7 @@ if(!file.exists(paste0(prefix, ".progress.RData"))){
   lapply(names(header), function(name){
     X <- header[[name]]
     con <- getConnection(db_type, paste0(db_name), username=username, password=password)
+    message(paste0("::: Creating ", name, " table."))
     DBI::dbWriteTable(
       conn = con,
       name = name,
@@ -147,6 +171,7 @@ if(!file.exists(paste0(prefix, ".progress.RData"))){
   
   ## add samples ##
   con <- getConnection(db_type, paste0(db_name), username=username, password=password)
+  message("::: Creating samples table.")
   DBI::dbWriteTable(
     conn = con,
     name = 'samples',
@@ -371,9 +396,22 @@ for(i in seq(chunk_start,p)){
   
   if(debug_mode){message("fixing 'AsIs' INFO columns")}
   
+  # TODO: Vectors of values from vcfanno INFO columns are being coerced to 
+  #       strings like 'c("a", "b")'.
+  #       Ideally these should be comma or pipe separated strings 
+  #       (not R object representations), or proper Postgres array types
+  #       eg: https://github.com/r-dbi/RPostgres/issues/35#issuecomment-861497349
+  #info.vcf <- info.vcf %>%
+  #  mutate_if(function(x){is.vector(x) && length(x) > 1}, 
+  #            function(y){paste0(y, sep='|')})
+  
   info.vcf <- info.vcf %>%
     mutate(alt = sapply(alt, as.character)) %>%
-    mutate_if(function(x){class(x)=="AsIs"}, as.character) 
+    mutate_if(function(x){class(x)=="AsIs"}, as.character)
+  
+  ## prevent "character(0)" strings
+  ## (this doesn't seem like the correct way to do it, but it works).
+  info.vcf[info.vcf == "character(0)"] <- NA
   
   if(debug_mode){
     message("done parsing info")
@@ -483,6 +521,7 @@ for(i in seq(chunk_start,p)){
         select(-group) %>%
         arrange(variant_id, sample)
       con <- getConnection(db_type, paste0(db_name), username=username, password=password)
+      message("::: Creating variant_geno table.")
       DBI::dbWriteTable(
         conn = con, 
         name = "variant_geno", 
@@ -502,17 +541,32 @@ for(i in seq(chunk_start,p)){
   ## Write to database
   con <- getConnection(db_type, paste0(db_name), username=username, password=password)
   if(exists('csq.vcf')){
+    message("::: Creating variant_impact table.")
     DBI::dbWriteTable(
       conn = con, 
       name = "variant_impact",
       value = csq.vcf, 
       append = TRUE) 
   }
+  message("::: Creating variant_info table.")
   DBI::dbWriteTable(
     conn = con,
     name = "variant_info",
-    value = info.vcf, 
+    value = info.vcf %>% select(-starts_with(vcfanno_prefixes)), 
     append = TRUE)
+  
+  # TODO: The _csq columns are not formatted correctly in these tables 
+  #       (showing R representation) not raw string
+  #       To do this properly we probably need a set of variant_impact_*_csq tables,
+  #       the same as variant_impact which comes from the CSQ field
+  for (pfx in vcfanno_prefixes) {
+    DBI::dbWriteTable(
+      conn = con,
+      name = paste0("variant_info_", tolower(pfx)),
+      value = info.vcf %>% select('variant_id', starts_with(tolower(pfx))),  
+      append = TRUE)
+  }
+  
   dbDisconnect(con)
   
   if(debug_mode){

@@ -1,4 +1,7 @@
 #! Rscript
+
+suppressPackageStartupMessages(require(stringr))
+
 args = commandArgs(trailingOnly=TRUE)
 
 file_mode <- NA
@@ -52,6 +55,10 @@ Optional Arguments:
     this option is only used for testing. Instead use
     VCFDBR_DATABASE_URL set in .Renviron in your
     home directory.
+--info-prefixes [string]
+    A comma seperated set of prefixes used to split INFO
+    fields into additional variant_info_* tables. eg
+    CADD,SIFT,CLINVAR
 --chunk-size [integer]
     The approximate number of variants to process
     at once. Smaller numbers  use less memory at
@@ -97,6 +104,10 @@ Optional Arguments:
     multi_gt <- TRUE
     args <- args[-1]
     message("Including GENO Fields with multiple values (may be slow for many samples)")
+  } else if(args[1] == "--info-prefixes"){
+    vcfanno_prefixes <- str_split(args[2], ',', simplify=TRUE)
+    args <- args[-1:-2]
+    message(paste(c("Will generate additional variant_info_* tables for INFO fields starting with:", paste0(vcfanno_prefixes, sep=','))))
   } else if(args[1] == "--debug"){
     debug_mode <- TRUE
     args <- args[-1]
@@ -143,7 +154,6 @@ if(!exists('file_mode')){
 } else if(!file_mode){
   message("Building a database where genotypes are saved to a table (variant_geno)")
 }
-
 
 this_file <- function() {
   cmdArgs <- commandArgs(trailingOnly = FALSE)

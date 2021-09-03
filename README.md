@@ -114,3 +114,14 @@ If you want to handle these, there are 3 primary optons:
 2. If the FORMAT field has a **fixed** number of values, split it apart into multiple FORMAT fields within the VCF (before building the database with VCFdbR). **For VCFs with many samples, this is the best option**. 
 3. If the field does not have a consistent number of values (i.e. if `Number=.`), then the only option is to import that field as a character by altering the VCF header so that `Number=1,Type=String`. This is because SQLite do not have a data type comparable to R's `list()`. Downstream processing of the string will be needed, which means the field will not be suitable for filtering upon until data has been collected into memory from the database. 
     *   Note that many callers seem to give FORMAT fields `Number=.`, even though there is actually always fixed number. In this case, you may able to just alter the VCF header to correctly specify the number of values that are present in the field (which may even be just 1)
+    
+## Custom `INFO` field tables
+
+`INFO` fields are recorded in the `variant_info` table. 
+If you have many `INFO` fields, such as those added by `vcfanno`, you may wish to (or need to) split these by type into their own tables. (In some cases this may be necessary, due to the default upper limit of 2000 columns per table in SQLite, or an even smaller limit in Postgres), eg:
+
+```{shell}
+$ Rscript VCFdb.R --prefix mydb --vcf variants.vcf --mode table ----info-prefixes CADD,SIFT,GNOMAD
+```
+
+This will take all `INFO` fields with a key prefixed by `CADD`, `SIFT` or `GNOMAD` and create tables `variant_info_cadd`, `variant_info_sift` and `variant_info_gnomad`, respectively. These columns are excluded from the main `variant_info` table.

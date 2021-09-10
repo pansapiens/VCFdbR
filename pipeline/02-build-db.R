@@ -1,4 +1,5 @@
 #! Rscript
+options(error = traceback)
 
 suppressPackageStartupMessages(require(stringr))
 
@@ -6,10 +7,12 @@ source(paste0(dirname(this_file()), "/util.R"))
 
 args = commandArgs(trailingOnly=TRUE)
 
-db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
-db_uri <- urltools::url_parse(db_url)
-db_type <- db_uri$scheme
-prefix <- db_uri$path
+# TODO: This clobbers db_url from the commandline.
+#       We want commandline value(s) to take precedence
+# db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
+# db_uri <- urltools::url_parse(db_url)
+# db_type <- db_uri$scheme
+# prefix <- db_uri$path
 
 ## defaults ##
 if(!exists("multi_gt")){
@@ -65,11 +68,12 @@ while(length(args > 0) ){
     message("Writing genotypes in parallel (requires furrr package)")
   } else if(args[1] == "--db-url"){
     db_url <- args[2]
+    message("db_url = ", db_url)
     db_uri <- urltools::url_parse(db_url)
     db_type <- db_uri$scheme
     prefix <- db_uri$path
     args <- args[-1:-2]
-  }  
+  }
   else {
     stop("Unknown argument: ", args[1])
   }
@@ -88,6 +92,9 @@ if(exists('threads') ){
   if( is.na(as.integer(threads))){
     stop("If provided, `--threads` must be an integer!")
   }
+}
+if (db_type == "sqlite" && !is.na(db_uri$domain)) {
+  stop("sqlite URL appears to be missing a slash (eg three slashes before path sqlite:////home/user/my_db)")
 }
 
 # If a column name starts with a number (eg 1KG) we need to prefix it with X
@@ -128,6 +135,13 @@ if (debug_mode) {
 
 if(!exists('chunk_ranges')){
   chunk_ranges <- read_rds(ranges_name)
+}
+if(!exists('db_type') || is.na(db_type)) {
+  db_type <- "sqlite"
+}
+
+if(debug_mode) {
+  message(paste(c('db_url = ', db_url)))
 }
 
 if (db_type == "sqlite") {

@@ -1,10 +1,14 @@
 #! Rscript
+options(error = traceback)
+
 args = commandArgs(trailingOnly=TRUE)
 
-db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
-db_uri <- urltools::url_parse(db_url)
-db_type <- db_uri$scheme
-prefix <- db_uri$path
+# TODO: This clobbers db_url from the commandline.
+#       We want commandline value(s) to take precedence
+# db_url <- Sys.getenv("VCFDBR_DATABASE_URL")
+# db_uri <- urltools::url_parse(db_url)
+# db_type <- db_uri$scheme
+# prefix <- db_uri$path
 
 while(length(args > 0) ){
   if(args[1] == '--prefix'){
@@ -25,6 +29,12 @@ while(length(args > 0) ){
   else {
     stop("Unknown argument: ", args[1])
   }
+}
+
+if (db_type == "sqlite") {
+  db_name <- paste0(prefix, ".db")
+} else {
+  db_name <- prefix
 }
 
 if(!exists("prefix")){

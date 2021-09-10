@@ -1,4 +1,5 @@
 #! Rscript
+options(error = traceback)
 
 suppressPackageStartupMessages(require(stringr))
 
@@ -120,14 +121,12 @@ Optional Arguments:
     require(furrr)
   } else if(args[1] == "--db-url"){
     db_url <- args[2]
+    message("db_url = ", db_url)
     db_uri <- urltools::url_parse(db_url)
     db_type <- db_uri$scheme
     prefix <- db_uri$path
     args <- args[-1:-2]
-  } 
-  # else if(args[1] == "--db-type"){
-  #
-  # }
+  }
   else {
     stop("Unknown argument: ", args[1])
   }
@@ -144,6 +143,9 @@ if(exists('threads') ){
     stop("If provided, `--threads` must be an integer!")
   }
 }
+if(!exists('db_type')) {
+  db_type <- "sqlite"
+}
 if(!exists('file_mode')){
   stop("You must specify a `--mode` for how genotypes should be stored: either 'file' or 'table'")
 } else if(file_mode){
@@ -153,6 +155,9 @@ if(!exists('file_mode')){
   message("Building a database where genotypes are saved to a directory (", geno_dir, "/)")
 } else if(!file_mode){
   message("Building a database where genotypes are saved to a table (variant_geno)")
+}
+if (db_type == "sqlite" && !is.na(db_uri$domain)) {
+  stop("sqlite URL appears to be missing a slash (eg needs three slashes before path sqlite:////home/user/my_db)")
 }
 
 this_file <- function() {
